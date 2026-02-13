@@ -119,6 +119,63 @@ const IMPERSONATION_KEYWORDS: string[] = [
     "unlocked",
 ];
 
+// Keywords indicating a legitimate companion/utility app (not impersonation)
+const LEGITIMATE_COMPANION_KEYWORDS: string[] = [
+    "saver",
+    "downloader",
+    "download",
+    "repost",
+    "sticker",
+    "stickers",
+    "theme",
+    "themes",
+    "wallpaper",
+    "wallpapers",
+    "guide",
+    "tutorial",
+    "tips",
+    "cleaner",
+    "backup",
+    "recovery",
+    "tracker",
+    "status",
+    "widget",
+    "fonts",
+    "keyboard",
+    "scanner",
+    "reader",
+    "manager",
+    "companion",
+    "helper",
+    "tool",
+    "tools",
+    "analytics",
+    "insights",
+    "viewer",
+    "editor",
+    "maker",
+    "creator",
+    "converter",
+    "splitter",
+    "scheduler",
+    "reminder",
+    "notifier",
+    "chat",
+    "dual",
+    "clone",
+    "web",
+    "lite",
+    "for business",
+    "business",
+    "trading",
+    "trade",
+    "invest",
+    "pay",
+    "money",
+    "send",
+    "transfer",
+];
+
 // ─── Loan Fraud Constants ────────────────────────────────────────────────────
 
 const LOAN_FRAUD_KEYWORDS: string[] = [
@@ -444,12 +501,22 @@ function checkFakeInstallInflation(app: AppData): RiskFlag | null {
 
 function checkImpersonation(app: AppData): RiskFlag | null {
     const titleLower = app.title.toLowerCase();
-    const impersonationModifiers = ["plus", "pro", "premium", "hack", "mod", "free"];
+    // Only flag truly suspicious modifiers (not "free" which is too common)
+    const dangerousModifiers = ["hack", "mod", "cracked", "unlocked"];
     const matchedBrand = IMPERSONATION_TARGETS.find((brand) =>
         titleLower.includes(brand)
     );
     if (matchedBrand) {
-        const hasModifier = impersonationModifiers.some((mod) =>
+        // Skip if this looks like a legitimate companion app
+        const isCompanion = LEGITIMATE_COMPANION_KEYWORDS.some((kw) =>
+            titleLower.includes(kw)
+        );
+        if (isCompanion) return null;
+
+        // Skip well-established apps (high installs = vetted by store)
+        if (app.minInstalls !== undefined && app.minInstalls >= 100000) return null;
+
+        const hasModifier = dangerousModifiers.some((mod) =>
             titleLower.includes(mod)
         );
         if (hasModifier) {
@@ -474,16 +541,26 @@ function checkBrandImpersonation(app: AppData): RiskFlag | null {
     for (const brand of TRUSTED_BRANDS) {
         if (!titleLower.includes(brand.name)) continue;
 
+        // Skip if this looks like a legitimate companion/utility app
+        const isCompanion = LEGITIMATE_COMPANION_KEYWORDS.some((kw) =>
+            titleLower.includes(kw)
+        );
+        if (isCompanion) continue;
+
+        // Skip well-established apps (high installs = vetted by store & users)
+        if (app.minInstalls !== undefined && app.minInstalls >= 100000) continue;
+
         const developerMismatch = !devLower.includes(brand.developer);
         const hasImpersonationKeyword = IMPERSONATION_KEYWORDS.some((kw) =>
             titleLower.includes(kw)
         );
 
-        if (developerMismatch || hasImpersonationKeyword) {
+        // Require BOTH developer mismatch AND suspicious keyword to flag
+        if (developerMismatch && hasImpersonationKeyword) {
             return {
                 id: "brand_impersonation",
                 label: "Brand Impersonation Detected",
-                description: `This app references the trusted brand "${brand.name}" but the developer ("${app.developer}") does not match the expected developer "${brand.developer}".${hasImpersonationKeyword ? " The title also contains impersonation keywords." : ""} This is a common tactic used to steal user credentials and distribute malware.`,
+                description: `This app references the trusted brand "${brand.name}" but the developer ("${app.developer}") does not match the expected developer "${brand.developer}", and the title contains suspicious keywords. This is a common tactic used to steal user credentials and distribute malware.`,
                 severity: "critical",
                 points: 25,
             };
