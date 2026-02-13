@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Shield,
@@ -19,7 +19,7 @@ import AppInfoCard from "@/components/AppInfoCard";
 import FlagList from "@/components/FlagList";
 import { AnalysisResult } from "@/lib/analyzer";
 
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -219,6 +219,14 @@ export default function Home() {
         </>
       )}
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
   );
 }
 
