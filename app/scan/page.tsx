@@ -188,8 +188,10 @@ function ScanContent() {
                                                         className="group relative overflow-hidden rounded-2xl border border-card-border bg-surface-2 p-6 transition-all duration-300 hover:border-accent-1/30 hover:shadow-lg hover:shadow-accent-1/5 cursor-pointer"
                                                         onClick={() => handleAnalyze(result.appInfo.url)}
                                                     >
-                                                        <div className="mb-6 flex justify-between items-start">
-                                                            <AppInfoCard app={result.appInfo} minimal />
+                                                        <div className="mb-6 flex justify-between items-start gap-4">
+                                                            <div className="min-w-0 flex-1">
+                                                                <AppInfoCard app={result.appInfo} minimal />
+                                                            </div>
                                                             <RiskGauge
                                                                 score={result.riskScore}
                                                                 level={result.riskLevel}
@@ -256,7 +258,7 @@ function ScanContent() {
                                                 {safeApps.map((result, idx) => (
                                                     <div
                                                         key={`${result.appInfo.url}-${idx}`}
-                                                        className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-0 rounded-xl border border-card-border bg-surface-1 p-4 transition-colors hover:bg-surface-2 cursor-pointer"
+                                                        className="overflow-hidden flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-0 rounded-xl border border-card-border bg-surface-1 p-4 transition-colors hover:bg-surface-2 cursor-pointer"
                                                         onClick={() => handleAnalyze(result.appInfo.url)}
                                                     >
                                                         <div className="flex-1 w-full min-w-0">
