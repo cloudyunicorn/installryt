@@ -71,9 +71,18 @@ export default function AppInfoCard({ app, minimal = false }: AppInfoCardProps) 
                             <div className="flex items-center gap-1.5">
                                 <Star size={14} className="text-warning fill-warning" />
                                 <span className="font-semibold">{app.score.toFixed(1)}</span>
-                                <span className="text-muted">
-                                    ({(app.ratings || 0).toLocaleString()} ratings)
-                                </span>
+                                {app.ratings > 0 && (
+                                    <span className="text-muted">
+                                        ({app.ratings.toLocaleString()} {app.store === "apple" && app.ratings === app.reviews ? "reviews" : "ratings"})
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
+                        {app.store === "google" && app.reviews > 0 && (
+                            <div className="flex items-center gap-1.5 text-muted">
+                                <User size={14} />
+                                <span>{app.reviews.toLocaleString()} reviews</span>
                             </div>
                         )}
 

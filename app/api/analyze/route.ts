@@ -22,10 +22,17 @@ function detectStore(url: string): StoreType {
     return null;
 }
 
-function extractGoogleAppId(url: string): string | null {
+function extractGoogleAppId(url: string): { appId: string; country: string; lang: string } | null {
     try {
         const parsed = new URL(url);
-        return parsed.searchParams.get("id");
+        const appId = parsed.searchParams.get("id");
+        if (!appId) return null;
+
+        // Extract country (gl) and language (hl) from URL params
+        const country = parsed.searchParams.get("gl") || "in";
+        const lang = parsed.searchParams.get("hl") || "en";
+
+        return { appId, country, lang };
     } catch {
         return null;
     }
@@ -133,12 +140,12 @@ interface AppleStoreResult {
     privacyPolicyUrl?: string;
 }
 
-async function scrapeGooglePlay(appId: string): Promise<AppData> {
+async function scrapeGooglePlay(appId: string, country = "in", lang = "en"): Promise<AppData> {
     const gplay = await getGPlayScraper();
     const [data, permissions, reviewsData] = await Promise.all([
-        gplay.app({ appId }),
-        gplay.permissions({ appId }).catch(() => []),
-        gplay.reviews({ appId, sort: gplay.sort.NEWEST, num: 5 }).catch(() => ({ data: [] })),
+        gplay.app({ appId, country, lang }),
+        gplay.permissions({ appId, lang }).catch(() => []),
+        gplay.reviews({ appId, sort: gplay.sort.NEWEST, num: 5, country, lang }).catch(() => ({ data: [] })),
     ]);
 
     console.log("\n═══ RAW GOOGLE PLAY DATA ═══");
@@ -259,14 +266,14 @@ export async function POST(request: NextRequest) {
         let appData: AppData;
 
         if (store === "google") {
-            const appId = extractGoogleAppId(url);
-            if (!appId) {
+            const parsed = extractGoogleAppId(url);
+            if (!parsed) {
                 return NextResponse.json(
                     { error: "Could not extract app ID from the Google Play URL." },
                     { status: 400 }
                 );
             }
-            appData = await scrapeGooglePlay(appId);
+            appData = await scrapeGooglePlay(parsed.appId, parsed.country, parsed.lang);
         } else {
             const parsed = extractAppleAppId(url);
             if (!parsed) {

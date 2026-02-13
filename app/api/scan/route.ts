@@ -58,19 +58,19 @@ function safeReview(r: any) {
 
 // ─── Scraping Logic ──────────────────────────────────────────────────────────
 
-async function searchAndAnalyzeGoogle(term: string, limit: number): Promise<AnalysisResult[]> {
+async function searchAndAnalyzeGoogle(term: string, limit: number, country = "in", lang = "en"): Promise<AnalysisResult[]> {
     const gplay = await getGPlayScraper();
 
     // 1. Search for top N apps
-    const searchResults = await gplay.search({ term, num: limit });
+    const searchResults = await gplay.search({ term, num: limit, country, lang });
 
-    console.log(`[Google] Found ${searchResults.length} apps for term: "${term}"`);
+    console.log(`[Google] Found ${searchResults.length} apps for term: "${term}" (country: ${country})`);
 
     // 2. Fetch details in chunks to avoid rate limits
     const detailedResults = await processInChunks(searchResults, 8, async (app: any) => {
         try {
             // Fetch full details
-            const data = await gplay.app({ appId: app.appId });
+            const data = await gplay.app({ appId: app.appId, country, lang });
 
             // Construct AppData
             const appData: AppData = {
@@ -116,18 +116,18 @@ async function searchAndAnalyzeGoogle(term: string, limit: number): Promise<Anal
     return detailedResults.filter((r): r is AnalysisResult => r !== null);
 }
 
-async function searchAndAnalyzeApple(term: string, limit: number): Promise<AnalysisResult[]> {
+async function searchAndAnalyzeApple(term: string, limit: number, country = "in"): Promise<AnalysisResult[]> {
     const store = await getAppStoreScraper();
 
     // 1. Search for top N apps
-    const searchResults = await store.search({ term, num: limit });
+    const searchResults = await store.search({ term, num: limit, country });
 
-    console.log(`[Apple] Found ${searchResults.length} apps for term: "${term}"`);
+    console.log(`[Apple] Found ${searchResults.length} apps for term: "${term}" (country: ${country})`);
 
     // 2. Fetch details in chunks
     const detailedResults = await processInChunks(searchResults, 8, async (app: any) => {
         try {
-            const data = await store.app({ id: app.id, country: "us" });
+            const data = await store.app({ id: app.id, country });
 
             // Apple scraper weirdness: ratings/reviews mapping
             const bestRatingCount = Math.max(data.ratings || 0, data.reviews || 0);

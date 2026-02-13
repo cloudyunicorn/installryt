@@ -45,6 +45,12 @@ export interface AppData {
         url?: string;
         version?: string | null;
     }>;
+    // Developer reputation (populated when available)
+    developerAppCount?: number;
+    developerAvgRating?: number;
+    developerAccountAgeDays?: number;
+    // Review text for fraud analysis
+    reviewsText?: string[];
 }
 
 export interface RiskFlag {
@@ -85,6 +91,63 @@ const SUSPICIOUS_KEYWORDS = [
     "get free",
     "no root",
     "free fire hack",
+];
+
+// ─── Brand Impersonation Constants ───────────────────────────────────────────
+
+const TRUSTED_BRANDS: Array<{ name: string; developer: string }> = [
+    { name: "whatsapp", developer: "whatsapp" },
+    { name: "google pay", developer: "google" },
+    { name: "gpay", developer: "google" },
+    { name: "paytm", developer: "paytm" },
+    { name: "phonepe", developer: "phonepe" },
+    { name: "amazon", developer: "amazon" },
+    { name: "facebook", developer: "meta" },
+    { name: "instagram", developer: "meta" },
+    { name: "telegram", developer: "telegram" },
+    { name: "spotify", developer: "spotify" },
+    { name: "netflix", developer: "netflix" },
+];
+
+const IMPERSONATION_KEYWORDS: string[] = [
+    "plus",
+    "pro",
+    "premium",
+    "mod",
+    "hack",
+    "free",
+    "unlocked",
+];
+
+// ─── Loan Fraud Constants ────────────────────────────────────────────────────
+
+const LOAN_FRAUD_KEYWORDS: string[] = [
+    "instant loan",
+    "quick loan",
+    "cash loan",
+    "loan fast",
+    "loan in minutes",
+    "loan without pan",
+    "loan without documents",
+    "personal loan fast",
+    "get loan instantly",
+    "easy loan",
+    "loan app",
+    "money loan fast",
+];
+
+// ─── Fraud Review Constants ──────────────────────────────────────────────────
+
+const FRAUD_REVIEW_KEYWORDS: string[] = [
+    "scam",
+    "fraud",
+    "blackmail",
+    "stole my data",
+    "hacked",
+    "fake app",
+    "threat",
+    "abuse",
+    "harassment",
 ];
 
 // ─── Analysis Functions ──────────────────────────────────────────────────────
@@ -402,10 +465,168 @@ function checkImpersonation(app: AppData): RiskFlag | null {
     return null;
 }
 
+// ─── Enhanced Fraud Detection Checks ─────────────────────────────────────────
+
+function checkBrandImpersonation(app: AppData): RiskFlag | null {
+    const titleLower = app.title.toLowerCase();
+    const devLower = app.developer.toLowerCase();
+
+    for (const brand of TRUSTED_BRANDS) {
+        if (!titleLower.includes(brand.name)) continue;
+
+        const developerMismatch = !devLower.includes(brand.developer);
+        const hasImpersonationKeyword = IMPERSONATION_KEYWORDS.some((kw) =>
+            titleLower.includes(kw)
+        );
+
+        if (developerMismatch || hasImpersonationKeyword) {
+            return {
+                id: "brand_impersonation",
+                label: "Brand Impersonation Detected",
+                description: `This app references the trusted brand "${brand.name}" but the developer ("${app.developer}") does not match the expected developer "${brand.developer}".${hasImpersonationKeyword ? " The title also contains impersonation keywords." : ""} This is a common tactic used to steal user credentials and distribute malware.`,
+                severity: "critical",
+                points: 25,
+            };
+        }
+    }
+    return null;
+}
+
+function checkRatingManipulation(app: AppData): RiskFlag | null {
+    if (app.score === null) return null;
+
+    // Case A: Near-perfect score with negligible ratings
+    const caseA = app.score >= 4.8 && app.ratings < 50;
+    // Case B: 100K+ installs with suspiciously few ratings
+    const caseB = app.minInstalls !== undefined && app.minInstalls >= 100000 && app.ratings < 100;
+    // Case C: 1M+ installs with extremely few ratings
+    const caseC = app.minInstalls !== undefined && app.minInstalls >= 1000000 && app.ratings < 500;
+
+    if (caseA || caseB || caseC) {
+        const reasons: string[] = [];
+        if (caseA) reasons.push(`near-perfect rating (${app.score.toFixed(1)}) with only ${app.ratings} ratings`);
+        if (caseB) reasons.push(`100K+ installs but only ${app.ratings} ratings`);
+        if (caseC) reasons.push(`1M+ installs but only ${app.ratings} ratings`);
+
+        return {
+            id: "rating_manipulation",
+            label: "Rating Manipulation Suspected",
+            description: `Multiple signals indicate potential rating manipulation: ${reasons.join("; ")}. These patterns are statistically improbable for organic growth and suggest artificial inflation.`,
+            severity: "high",
+            points: 20,
+        };
+    }
+    return null;
+}
+
+function checkLoanFraudKeywords(app: AppData): RiskFlag | null {
+    const searchText = `${app.title} ${app.description || ""}`.toLowerCase();
+    const found = LOAN_FRAUD_KEYWORDS.filter((kw) => searchText.includes(kw));
+
+    if (found.length >= 3) {
+        return {
+            id: "loan_fraud_critical",
+            label: "High-Risk Loan Scam Pattern",
+            description: `This app contains ${found.length} loan fraud keywords: "${found.slice(0, 4).join('", "')}". Financial loan scam apps frequently use these terms to lure victims with promises of instant cash, then harvest personal data or charge hidden fees.`,
+            severity: "critical",
+            points: 35,
+        };
+    }
+
+    if (found.length >= 1) {
+        return {
+            id: "loan_fraud_warning",
+            label: "Potential Loan Scam Keywords",
+            description: `This app contains loan-related fraud keywords: "${found.join('", "')}". Apps promising instant loans or cash with minimal verification are a major category of app store fraud, often leading to data theft or hidden charges.`,
+            severity: "critical",
+            points: 25,
+        };
+    }
+    return null;
+}
+
+function checkDeveloperReputation(app: AppData): RiskFlag | null {
+    const lowAppCount = app.developerAppCount !== undefined && app.developerAppCount <= 2;
+    const newAccount = app.developerAccountAgeDays !== undefined && app.developerAccountAgeDays < 30;
+
+    if (lowAppCount || newAccount) {
+        const reasons: string[] = [];
+        if (lowAppCount) reasons.push(`developer has only ${app.developerAppCount} app(s) published`);
+        if (newAccount) reasons.push(`developer account is only ${app.developerAccountAgeDays} days old`);
+
+        return {
+            id: "low_dev_reputation",
+            label: "Low Developer Reputation",
+            description: `This developer shows signs of low credibility: ${reasons.join("; ")}. Scam developers often create throwaway accounts with minimal publishing history to distribute fraudulent apps.`,
+            severity: "high",
+            points: 20,
+        };
+    }
+    return null;
+}
+
+function checkFraudReviews(app: AppData): RiskFlag | null {
+    const reviewTexts = app.reviewsText || app.reviewsList?.map((r) => r.text) || [];
+    if (reviewTexts.length === 0) return null;
+
+    const flaggedReviews = reviewTexts.filter((text) => {
+        const lower = text.toLowerCase();
+        return FRAUD_REVIEW_KEYWORDS.some((kw) => lower.includes(kw));
+    });
+
+    if (flaggedReviews.length >= 2) {
+        return {
+            id: "fraud_reviews_detected",
+            label: "Users Report Fraud or Abuse",
+            description: `${flaggedReviews.length} out of ${reviewTexts.length} sampled reviews contain fraud-related keywords (scam, fraud, harassment, etc.). When multiple users independently report similar issues, it is a strong indicator of a deceptive or dangerous app.`,
+            severity: "critical",
+            points: 40,
+        };
+    }
+    return null;
+}
+
+function checkUpdateFrequency(app: AppData): RiskFlag | null {
+    if (!app.updated) return null;
+
+    const updatedDate = typeof app.updated === "number"
+        ? new Date(app.updated)
+        : new Date(app.updated);
+
+    if (isNaN(updatedDate.getTime())) return null;
+
+    const now = new Date();
+    const daysSinceUpdate = Math.floor(
+        (now.getTime() - updatedDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (daysSinceUpdate > 730) {
+        return {
+            id: "severely_outdated",
+            label: "App Severely Outdated",
+            description: `This app hasn't been updated in over ${Math.floor(daysSinceUpdate / 365)} years (last update: ${updatedDate.toLocaleDateString()}). Severely outdated apps are prime targets for security exploits and are very likely abandoned or fraudulent.`,
+            severity: "high",
+            points: 20,
+        };
+    }
+
+    if (daysSinceUpdate > 365) {
+        return {
+            id: "outdated_app",
+            label: "App Not Updated in Over a Year",
+            description: `This app hasn't been updated in over ${Math.floor(daysSinceUpdate / 30)} months (last update: ${updatedDate.toLocaleDateString()}). Apps that go long periods without updates may have unpatched vulnerabilities and reduced reliability.`,
+            severity: "medium",
+            points: 15,
+        };
+    }
+    return null;
+}
+
 // ─── Main Analyzer ───────────────────────────────────────────────────────────
 
 export function analyzeApp(appData: AppData): AnalysisResult {
     const checks = [
+        // Original checks
         checkLowRating,
         checkFewReviews,
         checkNewApp,
@@ -423,6 +644,13 @@ export function analyzeApp(appData: AppData): AnalysisResult {
         checkNotUpdatedRecently,
         checkFakeInstallInflation,
         checkImpersonation,
+        // Enhanced fraud detection checks
+        checkBrandImpersonation,
+        checkRatingManipulation,
+        checkLoanFraudKeywords,
+        checkDeveloperReputation,
+        checkFraudReviews,
+        checkUpdateFrequency,
     ];
 
     const flags: RiskFlag[] = [];
